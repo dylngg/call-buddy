@@ -16,13 +16,16 @@ func (c couldntResolve) Error() string {
 }
 
 func newCouldntResolve(name string) couldntResolve {
-return couldntResolve{name}
+	return couldntResolve{name}
 }
 
+/*
+ * Expander will take an expandable and push it
+ */
 type Expander struct {
-	resolvers OrderedVariableResolver
+	resolvers       SortableVariableResolver
+	leaveUnresolved bool
 }
-
 
 func (e Expander) resolve(name string) (string, error) {
 	for _, resolver := range e.resolvers {
@@ -40,8 +43,8 @@ func (e Expander) resolve(name string) (string, error) {
 func (e Expander) Expand(content string) (string, error) {
 	type expandState struct {
 		readingVarName bool
-		varName string
-		chunks []Expandable
+		varName        string
+		chunks         []Expandable
 	}
 	expanded := bytes.Buffer{}
 	bufferedCurrent := bytes.NewBufferString(content)
@@ -60,7 +63,7 @@ func (e Expander) Expand(content string) (string, error) {
 		if currentState.readingVarName {
 			if this == '{' {
 				continue
-			} else if this == '}'{
+			} else if this == '}' {
 				currentState.readingVarName = false
 				if resolved, resolverError := e.resolve(currentState.varName); resolverError == nil {
 					expanded.WriteString(resolved)
@@ -77,7 +80,7 @@ func (e Expander) Expand(content string) (string, error) {
 				currentState.readingVarName = true
 				continue
 			} else {
-
+				expanded.WriteRune(this)
 			}
 		}
 	}

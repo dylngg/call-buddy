@@ -1,11 +1,14 @@
 package telephono
 
-
 ////
 // Basic Expandable
 ////
 type BasicExpandable struct {
 	backing string
+}
+
+func (basic *BasicExpandable) Expand(expandable Expander) (string, error) {
+	return expandable.Expand(basic.GetUnexpanded())
 }
 
 func (basic *BasicExpandable) GetUnexpanded() string {
@@ -14,8 +17,4 @@ func (basic *BasicExpandable) GetUnexpanded() string {
 
 func (basic *BasicExpandable) SetUnexpanded(toSet string) {
 	basic.backing = toSet
-}
-
-func (basic *BasicExpandable) Expand(expander Expander) (string, error) {
-	return expander.Expand(basic.GetUnexpanded())
 }

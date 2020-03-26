@@ -1,16 +1,16 @@
 package telephono
 
-type OrderedVariableResolver []VariableResolver
+type SortableVariableResolver []VariableResolver
 
-func (o OrderedVariableResolver) get(index int) VariableResolver {
+func (o SortableVariableResolver) get(index int) VariableResolver {
 	return o[index]
 }
 
-func (o OrderedVariableResolver) Len() int {
+func (o SortableVariableResolver) Len() int {
 	return len(o)
 }
 
-func (o OrderedVariableResolver) Less(i, j int) bool {
+func (o SortableVariableResolver) Less(i, j int) bool {
 	var (
 		firstVal  = o.get(i).Order()
 		secondVal = o.get(j).Order()
@@ -19,9 +19,8 @@ func (o OrderedVariableResolver) Less(i, j int) bool {
 	return firstVal < secondVal
 }
 
-func (o OrderedVariableResolver) Swap(i, j int) {
+func (o SortableVariableResolver) Swap(i, j int) {
 	temp := o.get(i)
 	o[i] = o[j]
 	o[j] = temp
 }
-
