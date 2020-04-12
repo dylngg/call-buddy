@@ -1,11 +1,6 @@
 package telephono
 
-import (
-	"bytes"
-	"io"
-	"log"
-	"sort"
-)
+import mustache "github.com/cbroglie/mustache"
 
 type couldntResolve struct {
 	name string
@@ -23,72 +18,42 @@ func newCouldntResolve(name string) couldntResolve {
  * Expander will take an expandable and push it
  */
 type Expander struct {
-	resolvers       SortableVariableResolver
+	contributors    []ContextContributor
 	leaveUnresolved bool
-}
-
-func (e Expander) resolve(name string) (string, error) {
-	for _, resolver := range e.resolvers {
-		if resolver.CanHandle(name) {
-			if resolved, resolverErr := resolver.Resolve(name); resolverErr != nil {
-				return resolved, nil
-			}
-		}
-	}
-
-	return "", newCouldntResolve(name)
 }
 
 //Expand the content and return the expanded string or an error if it failed
 func (e Expander) Expand(content string) (string, error) {
-	type expandState struct {
-		readingVarName bool
-		varName        string
-		chunks         []Expandable
+	var compiled *mustache.Template
+	if compiled, templateErr := mustache.ParseString(content); templateErr != nil {
+		return "", templateErr
 	}
-	expanded := bytes.Buffer{}
-	bufferedCurrent := bytes.NewBufferString(content)
 
-	currentState := expandState{false, "", []Expandable{}}
+	contexts := make(map[string]interface{})
+	noNameContexts := make([]interface{}, 0)
 
-	for true {
-		this, _, err := bufferedCurrent.ReadRune()
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			// If we get some other kind of error log it and move on
-			log.Fatal(err.Error())
-		}
-
-		if currentState.readingVarName {
-			if this == '{' {
-				continue
-			} else if this == '}' {
-				currentState.readingVarName = false
-				if resolved, resolverError := e.resolve(currentState.varName); resolverError == nil {
-					expanded.WriteString(resolved)
-				} else {
-					// TODO AH: Logging
-					continue
-				}
+	for _, contributor := range e.contributors {
+		if name, ctx, err := contributor.Contribute(); err == nil {
+			if name != "" {
+				contexts[name] = ctx
 			} else {
-				currentState.varName = currentState.varName + string(this)
-			}
-
-		} else {
-			if this == '$' {
-				currentState.readingVarName = true
-				continue
-			} else {
-				expanded.WriteRune(this)
+				noNameContexts = append(noNameContexts, ctx)
 			}
 		}
 	}
 
-	return expanded.String(), nil
+	var rendered string
+	if rendered, renderErr := compiled.Render(contexts); renderErr != nil {
+		return "", renderErr
+	}
+
+	return rendered, nil
 }
 
-func (e *Expander) AddResolver(resolver VariableResolver) {
-	e.resolvers = append(e.resolvers, resolver)
-	sort.Sort(e.resolvers)
+func (e *Expander) AddContributor(contributor ContextContributor) {
+	if e.contributors == nil {
+		e.contributors = make([]ContextContributor, 0, 3)
+	}
+
+	e.contributors = append(e.contributors, contributor)
 }

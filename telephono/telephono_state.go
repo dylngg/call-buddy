@@ -19,8 +19,8 @@ type Expandable interface {
 	Expand(expandable *Expander) (string, error)
 }
 
-type CallTemplate struct {
-
+type CallBuddyState struct {
+	// TODO AH: Call templates
+	// TODO AH: Environments (collections of set variables)
+	//
 }
-
-
