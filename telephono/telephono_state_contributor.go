@@ -6,15 +6,19 @@ import (
 )
 
 type ContextContributor interface {
-	//Contribute returns the name of the contribution and the object (Map or struct)
+	/*
+		Contribute returns the name of the contribution and the object (Map or struct)
+
+		For example, the environment variable contributor should return "Env", a map of key values, nil
+	*/
 	Contribute() (string, interface{}, error)
 }
 
-type SimpleContibutor struct {
+type SimpleContributor struct {
 	backing map[string]string
 }
 
-func (s *SimpleContibutor) Contribute() (string, interface{}, error) {
+func (s *SimpleContributor) Contribute() (string, interface{}, error) {
 	panic("implement me")
 }
 
@@ -35,12 +39,11 @@ func (e *EnvironmentContributor) refresh() error {
 	return nil
 }
 
-func (e *EnvironmentContributor) Contribute() (string, interface{}, error) {
+func (e EnvironmentContributor) Contribute() (string, interface{}, error) {
 	if !e.cached {
 		_ = e.refresh()
 		e.cached = true
 	}
 
 	return "Env", e.cache, nil
-
 }

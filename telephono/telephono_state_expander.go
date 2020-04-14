@@ -25,7 +25,8 @@ type Expander struct {
 //Expand the content and return the expanded string or an error if it failed
 func (e Expander) Expand(content string) (string, error) {
 	var compiled *mustache.Template
-	if compiled, templateErr := mustache.ParseString(content); templateErr != nil {
+	var templateErr error
+	if compiled, templateErr = mustache.ParseString(content); templateErr != nil {
 		return "", templateErr
 	}
 
@@ -43,7 +44,8 @@ func (e Expander) Expand(content string) (string, error) {
 	}
 
 	var rendered string
-	if rendered, renderErr := compiled.Render(contexts); renderErr != nil {
+	var renderErr error
+	if rendered, renderErr = compiled.Render(contexts); renderErr != nil {
 		return "", renderErr
 	}
 
