@@ -1,11 +1,19 @@
 package telephono
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestExpander_Expand(t *testing.T) {
 	under := Expander{}
+	var alex SimpleContributor = New("Alex")
+	var cooper SimpleContributor = New("Cooper")
+
 	t.Run("Adding Contributors", func(s *testing.T) {
 		under.AddContributor(EnvironmentContributor{})
+		under.AddContributor(alex)
+		under.AddContributor(cooper)
 	})
 
 	t.Run("Resolve environment variable $PATH", func(sub *testing.T) {
@@ -23,5 +31,29 @@ func TestExpander_Expand(t *testing.T) {
 		}
 
 		sub.Log("Rendered $PATH too: " + rendered)
+	})
+
+	t.Run("Using Simple Contributor", func(sub *testing.T) {
+		alex.Set("iscool", "yes")
+		cooper.Set("iscool", "no")
+
+		rendered, renderErr := under.Expand(`
+{{#Alex}}
+{{iscool}}
+{{/Alex}}
+{{#Cooper}}
+{{iscool}}
+{{/Cooper}}`[1:])
+
+		// Check if we errored...
+		if renderErr != nil {
+			sub.Error("Couldn't render environment path: " + renderErr.Error())
+		}
+
+		if !(strings.Contains(rendered, "yes") && strings.Contains(rendered, "no")) {
+			sub.Error("Should have contained both yes and no:\n", rendered)
+		}
+
+		sub.Log("Rendered:\n", rendered)
 	})
 }
