@@ -3,3 +3,4 @@
 *.log
 telephono/debug
 telephono/telephono
+cmd/call-buddy
