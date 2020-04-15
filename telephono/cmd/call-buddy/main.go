@@ -7,12 +7,27 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	//"../telephono"
+	"telephono"
 )
 
 func die(msg string) {
 	os.Stderr.WriteString(msg)
 	os.Exit(1)
+}
+
+func stdinEnvExpanded() string {
+	expander := telephono.Expander{}
+	expander.AddContributor(telephono.EnvironmentContributor{})
+	stdinBuf, err := ioutil.ReadAll(os.Stdin)
+	if err != nil {
+		log.Fatal(err)
+	}
+	stdinStr := string(stdinBuf)
+	stdinStr, err = expander.Expand(stdinStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return stdinStr
 }
 
 func printResponse(resp *http.Response) {
@@ -40,6 +55,7 @@ func main() {
 	if argLen > 2 {
 		contentType = os.Args[3]
 	}
+
 	switch callType {
 	case "get":
 		resp, err := http.Get(url)
@@ -50,7 +66,8 @@ func main() {
 		printResponse(resp)
 
 	case "post":
-		resp, err := http.Post(url, contentType, os.Stdin)
+		stdin := stdinEnvExpanded()
+		resp, err := http.Post(url, contentType, strings.NewReader(stdin))
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -79,7 +96,8 @@ func main() {
 		printResponse(resp)
 
 	case "put":
-		req, err := http.NewRequest("PUT", url, os.Stdin)
+		stdin := stdinEnvExpanded()
+		req, err := http.NewRequest("PUT", url, strings.NewReader(stdin))
 		if err != nil {
 			log.Fatal(err)
 		}
