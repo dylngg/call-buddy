@@ -1,12 +1,15 @@
-.PHONY: all clean
+.PHONY: all clean telephono call-buddy
 
-all: test
+all: call-buddy telephono
 
 clean:
-	rm -f telephono
+	rm -f telephono call-buddy
 
 telephono: *.go
 	go build -o $@ cmd/telephono/main.go
 
+call-buddy: *.go
+	go build -o $@ cmd/call-buddy/main.go
+
 test:
-	go test
+	go test -v
