@@ -19,9 +19,8 @@ func (s SimpleContributor) Contribute() (string, interface{}, error) {
 	return s.prefix, s.backing, nil
 }
 
-func (s *SimpleContributor) Set(key, value string) error {
+func (s *SimpleContributor) Set(key, value string) {
 	s.backing[key] = value
-	return nil
 }
 
 //NewSimpleContributor creates a new simple contribut at the `prefix` address, i.e. accessible at {{prefix.Value}}
