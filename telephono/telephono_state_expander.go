@@ -1,6 +1,6 @@
 package telephono
 
-import mustache "github.com/cbroglie/mustache"
+import "github.com/cbroglie/mustache"
 
 type couldntResolve struct {
 	name string
@@ -15,8 +15,10 @@ func newCouldntResolve(name string) couldntResolve {
 }
 
 /*
- * Expander will take an expandable and push it
- */
+ Expander will take an expandable and explode it out into a string given some contributors
+
+Expander{} is ready to go, no init necessary
+*/
 type Expander struct {
 	contributors    []ContextContributor
 	leaveUnresolved bool

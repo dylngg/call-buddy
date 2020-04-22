@@ -2,6 +2,11 @@ package telephono
 
 import "errors"
 
+/*
+ Simple contributor key/value store
+
+May be replaced with a better struct more suited to serialization
+*/
 type SimpleContributor struct {
 	prefix  string
 	backing map[string]string
@@ -14,12 +19,12 @@ func (s SimpleContributor) Contribute() (string, interface{}, error) {
 	return s.prefix, s.backing, nil
 }
 
-func (s *SimpleContributor) Set(key, value string) error {
+func (s *SimpleContributor) Set(key, value string) {
 	s.backing[key] = value
-	return nil
 }
 
-func New(prefix string) SimpleContributor {
+//NewSimpleContributor creates a new simple contribut at the `prefix` address, i.e. accessible at {{prefix.Value}}
+func NewSimpleContributor(prefix string) SimpleContributor {
 	if len(prefix) == 0 {
 		// TODO AH: Should we panic?
 		panic("Must have a prefix")

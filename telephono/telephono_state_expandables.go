@@ -18,3 +18,7 @@ func (basic *BasicExpandable) GetUnexpanded() string {
 func (basic *BasicExpandable) SetUnexpanded(toSet string) {
 	basic.backing = toSet
 }
+
+func NewExpandable(unexpanded string) BasicExpandable {
+	return BasicExpandable{unexpanded}
+}
