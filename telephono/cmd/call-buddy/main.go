@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
+	"github.com/jroimartin/gocui"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"strings"
-	//"../telephono"
 )
 
 func die(msg string) {
@@ -29,7 +29,59 @@ func printResponse(resp *http.Response) {
 	os.Stdout.WriteString(string(body))
 }
 
+//Setting the manager
+func layout(g *gocui.Gui) error {
+	//maxX, maxY := g.Size()
+	if v, err := g.SetView("hello", 0, 0, 20, 15); err != nil {
+		if err != gocui.ErrUnknownView {
+			return err
+		}
+		fmt.Fprint(v, "\u001b[31mTerminal "+"\u001b[32mCall "+"\u001b[33mBuddy")
+	}
+
+	return nil
+}
+
+//This is the function to QUIT out of the TUI
+func quit(g *gocui.Gui, v *gocui.View) error {
+	return gocui.ErrQuit
+}
+
+//func update(g *gocui.Gui, v *gocui.View) error {
+//	v, err := g.View("viewname")
+//	if err != nil {
+//		// handle error
+//	}
+//	v.Clear()
+//	fmt.Fprintln(v, "THIS IS UPDATED - ALSO DEREK FUCKS")
+//	return nil
+//}
+
 func main() {
+
+	//Setting up a new TUI
+	g, err := gocui.NewGui(gocui.OutputNormal)
+	if err != nil {
+		log.Panicln(err)
+	}
+	defer g.Close()
+
+	//Setting a manager, sets the view (defined as another function above)
+	g.SetManagerFunc(layout)
+
+	//Setting keybindings
+	if err := g.SetKeybinding("", gocui.KeyCtrlZ, gocui.ModNone, quit); err != nil {
+		log.Panicln(err)
+	}
+
+	//if err := g.SetKeybinding("", gocui.KeyEnter, gocui.ModNone, update); err != nil {
+	//	log.Panicln(err)
+	//}
+
+	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
+		log.Panicln(err)
+	}
+
 	argLen := len(os.Args[1:])
 	if argLen < 2 {
 		die("Usage: ./call-buddy <call-type> <url> [content-type]\n")
@@ -47,7 +99,7 @@ func main() {
 			log.Fatal(err)
 		}
 		defer resp.Body.Close()
-		printResponse(resp)
+		//printResponse(resp)
 
 	case "post":
 		resp, err := http.Post(url, contentType, os.Stdin)

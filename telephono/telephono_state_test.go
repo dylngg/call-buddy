@@ -7,8 +7,8 @@ import (
 
 func TestExpander_Expand(t *testing.T) {
 	under := Expander{}
-	var alex SimpleContributor = New("Alex")
-	var cooper SimpleContributor = New("Cooper")
+	var alex = NewSimpleContributor("Alex")
+	var cooper = NewSimpleContributor("Cooper")
 
 	t.Run("Adding Contributors", func(s *testing.T) {
 		under.AddContributor(EnvironmentContributor{})
