@@ -21,6 +21,11 @@ import (
 	//"../telephono"
 )
 
+type remoteSyncClient struct {
+	sshSession *ssh.Session
+	sftpClient *sftp.Client
+}
+
 func parseArgs() (target, arch *string, args []string) {
 	arch = flag.String("a", "", "Architecture to use: e.g. linux-amd64, darwin-amd64, linux-arm")
 	target = flag.String("t", "", "Target host: user@host")
@@ -87,24 +92,28 @@ func remoteMetadata(client *ssh.Client) (string, string) {
 	return arch, homedir
 }
 
-func bootstrapCallBuddy(localCallBuddyPath, remoteHomeDir string, remoteSftpClient *sftp.Client) string {
-	remoteCallBuddyDir := remoteHomeDir + "/.call-buddy"
-	remoteCallBuddyPath := remoteCallBuddyDir + "/" + filepath.Base(localCallBuddyPath)
-	files, err := remoteSftpClient.ReadDir(remoteHomeDir)
+func cleanupBootstrapCallBuddy(remoteSftpClient *sftp.Client, remoteCallBuddyPath string) {
+	// FIXME: Handle errors
+	fmt.Println("Removing call-buddy from remote client")
+	remoteSftpClient.Remove(remoteCallBuddyPath)
+	remoteSftpClient.RemoveDirectory(filepath.Dir(remoteCallBuddyPath))
+}
+
+func bootstrapCallBuddy(remoteSftpClient *sftp.Client, localCallBuddyPath, remoteCallBuddyPath string) error {
+	remoteCallBuddyDir := filepath.Dir(remoteCallBuddyPath)
+
+	// Check whether the call-buddy dir exists
+	_, err := remoteSftpClient.Stat(remoteCallBuddyDir)
 	if err != nil {
-		log.Fatal("Failed to read remote homedir: '", remoteHomeDir, "' ", err)
-	}
-	foundDir := false
-	for _, f := range files {
-		if f.Name() == filepath.Base(remoteCallBuddyDir) {
-			foundDir = true
-			break
-		}
-	}
-	if !foundDir {
-		err = remoteSftpClient.Mkdir(remoteCallBuddyDir)
-		if err != nil {
-			log.Fatal("Failed to create remote call buddy dir! ", err)
+		if os.IsNotExist(err) {
+			err = remoteSftpClient.Mkdir(remoteCallBuddyDir)
+			if err != nil {
+				log.Printf("Failed to create remote call buddy dir '%s': %s\n", remoteCallBuddyDir, err)
+				return err
+			}
+		} else {
+			log.Printf("Failed to read remote call-buddy dir '%s': %s\n", remoteCallBuddyDir, err)
+			return err
 		}
 	} else {
 		// We don't know if the existing binary is old, so we'll remove it and
@@ -112,30 +121,79 @@ func bootstrapCallBuddy(localCallBuddyPath, remoteHomeDir string, remoteSftpClie
 		// FIXME DG: What if ~/.call-buddy exists, but ~/.call-buddy/call-buddy does not?
 		err = remoteSftpClient.Remove(remoteCallBuddyPath)
 		if err != nil {
-			log.Fatal("Failed to remove existing call buddy path: ", err)
+			log.Printf("Failed to remove existing remote call-buddy path '%s': %s\n", remoteCallBuddyPath, err)
+			return err
 		}
 	}
 	remoteExe, err := remoteSftpClient.Create(remoteCallBuddyPath)
 	if err != nil {
-		log.Fatal("Failed to create: ", err)
+		log.Println("Failed to create remote call-buddy exe: ", err)
+		return err
 	}
 	defer remoteExe.Close()
 	remoteExe.Seek(0, os.SEEK_SET) // Make sure we're pointing to the beginning
 
 	buf, err := ioutil.ReadFile(localCallBuddyPath)
 	if err != nil {
-		log.Fatal("Failed to read local call buddy path: ", err)
+		log.Println("Failed to read local call-buddy path: ", err)
+		return err
 	}
 	remoteExe.Write(buf)
 	remoteExe.Chmod(0755) // Make the file executable
-	return remoteCallBuddyPath
+	return nil
 }
 
-func cleanupBootstrapCallBuddy(localCallBuddyPath, remoteHomeDir string, remoteSftpClient *sftp.Client) {
-	remoteCallBuddyDir := remoteHomeDir + "/.call-buddy"
-	remoteCallBuddyPath := remoteCallBuddyDir + "/" + filepath.Base(localCallBuddyPath)
-	remoteSftpClient.Remove(remoteCallBuddyPath)
-	remoteSftpClient.RemoveDirectory(remoteCallBuddyDir)
+func closeRemoteSyncing(remoteClient *remoteSyncClient, remoteCallBuddyPath string) {
+	// TODO: Cleanup syncing goroutine
+	cleanupBootstrapCallBuddy(remoteClient.sftpClient, remoteCallBuddyPath)
+	remoteClient.sshSession.Close()
+	remoteClient.sftpClient.Close()
+}
+
+func spawnRemoteSyncing(client *ssh.Client, remoteCallBuddyPath, arch *string) (*remoteSyncClient, error) {
+	// FIXME: Log things out
+
+	syncingSession, err := client.NewSession()
+	if err != nil {
+		log.Println("Failed to create syncing session: ", err)
+		return nil, err
+	}
+	syncingStdin, err := syncingSession.StdinPipe()
+	if err != nil {
+		syncingSession.Close()
+		return nil, err
+	}
+	syncingStdout, err := syncingSession.StdoutPipe()
+	if err != nil {
+		syncingSession.Close()
+		return nil, err
+	}
+
+	syncingSession.RequestSubsystem("sftp")
+	syncingClient, err := sftp.NewClientPipe(syncingStdout, syncingStdin)
+	if err != nil {
+		syncingSession.Close()
+		return nil, err
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		syncingSession.Close()
+		syncingClient.Close()
+		return nil, err
+	}
+	remoteClient := remoteSyncClient{syncingSession, syncingClient}
+
+	localCallBuddyPath := filepath.Clean(cwd + "/../telephono-ui/build/" + *arch + "/call-buddy")
+	fmt.Printf("Syncing call-buddy from %s to remote client at %s\n", localCallBuddyPath, *remoteCallBuddyPath)
+	err = bootstrapCallBuddy(remoteClient.sftpClient, localCallBuddyPath, *remoteCallBuddyPath)
+	if err != nil {
+		// FIXME: Use cleanupRemoteSyncing here, but beware of non bootstrap
+		remoteClient.sshSession.Close()
+		remoteClient.sftpClient.Close()
+		return nil, err
+	}
+	return &remoteClient, nil
 }
 
 func remoteRun(target, arch *string, args []string) {
@@ -155,33 +213,12 @@ func remoteRun(target, arch *string, args []string) {
 		arch = &detectedArch
 	}
 
-	syncingSession, err := client.NewSession()
+	remoteCallBuddyPath := remoteHomeDir + "/.call-buddy/call-buddy"
+	syncingClient, err := spawnRemoteSyncing(client, &remoteCallBuddyPath, &detectedArch)
 	if err != nil {
-		log.Fatal("Failed to create syncing session: ", err)
+		// TODO: Inspect the error and don't always fail
+		log.Fatal("Failed to spawn off remote syncing")
 	}
-	defer syncingSession.Close()
-
-	syncingStdin, err := syncingSession.StdinPipe()
-	if err != nil {
-		log.Fatal(err)
-	}
-	syncingStdout, err := syncingSession.StdoutPipe()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	syncingSession.RequestSubsystem("sftp")
-	syncingClient, err := sftp.NewClientPipe(syncingStdout, syncingStdin)
-	if err != nil {
-		// FIXME: Proceed without syncing if we cannot sync
-		log.Fatal(err)
-	}
-	defer syncingClient.Close()
-
-	cwd, _ := os.Getwd()
-	localCallBuddyPath := filepath.Clean(cwd + "/../telephono-ui/build/" + *arch + "/call-buddy")
-	fmt.Printf("Syncing call-buddy from %s to %s@%s\n", localCallBuddyPath, username, hostname)
-	remoteCallBuddyPath := bootstrapCallBuddy(localCallBuddyPath, remoteHomeDir, syncingClient)
 
 	session, err := client.NewSession()
 	if err != nil {
@@ -224,8 +261,8 @@ func remoteRun(target, arch *string, args []string) {
 	go io.Copy(os.Stderr, stderr)
 
 	session.Run(remoteCallBuddyPath + " " + strings.Join(args, " "))
-	fmt.Printf("Removing call-buddy from %s@%s\n", username, hostname)
-	cleanupBootstrapCallBuddy(localCallBuddyPath, remoteHomeDir, syncingClient)
+	// FIXME: When we do ctl-c to quit call-buddy we don't get here!
+	closeRemoteSyncing(syncingClient, remoteCallBuddyPath)
 }
 
 func localRun(args []string) {
