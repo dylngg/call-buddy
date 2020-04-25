@@ -2,7 +2,6 @@ package telephono
 
 import (
 	"io/ioutil"
-	"log"
 	"net/http"
 	"strings"
 	"testing"
@@ -47,7 +46,7 @@ func TestBasicCallTemplate(t *testing.T) {
 
 	if allBytes, readErr := ioutil.ReadAll(response.Body); readErr == nil {
 		asString := string(allBytes)
-		log.Println(asString)
+		//t.Log(asString)
 		if !(strings.Contains(asString, "BBBB") && strings.Contains(asString, "AAAA")) {
 			t.Fatal("Didn't find AAAA and BBBB")
 		}
