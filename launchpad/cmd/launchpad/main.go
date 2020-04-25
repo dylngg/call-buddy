@@ -92,6 +92,52 @@ func remoteMetadata(client *ssh.Client) (string, string) {
 	return arch, homedir
 }
 
+func getPty(client *ssh.Client) (*ssh.Session, error) {
+	session, err := client.NewSession()
+	if err != nil {
+		return nil, err
+	}
+
+	modes := ssh.TerminalModes{
+		ssh.ECHO:          1,     // disable echoing
+		ssh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
+		ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
+	}
+
+	// Request pseudo terminal
+	// FIXME DG: Make adjustments to current terminal propogate to remote pty
+	// (also handle signals)
+	width, height, err := terminal.GetSize(int(os.Stdin.Fd()))
+	if err != nil {
+		log.Printf("Failed to get terminal size! %s\n", err)
+		return nil, err
+	}
+	if err := session.RequestPty("xterm", height, width, modes); err != nil {
+		log.Printf("Failed to get pseudo terminal: %s\n", err)
+		return nil, err
+	}
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		log.Printf("Unable to setup stdin for session: %s\n", err)
+		return nil, err
+	}
+	go io.Copy(stdin, os.Stdin)
+
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		log.Fatalf("Unable to setup stdout for session: %v", err)
+	}
+	go io.Copy(os.Stdout, stdout)
+
+	stderr, err := session.StderrPipe()
+	if err != nil {
+		log.Fatalf("Unable to setup stderr for session: %v", err)
+	}
+	go io.Copy(os.Stderr, stderr)
+
+	return session, nil
+}
+
 func cleanupBootstrapCallBuddy(remoteSftpClient *sftp.Client, remoteCallBuddyPath string) {
 	remoteSftpClient.Remove(remoteCallBuddyPath)
 	remoteSftpClient.RemoveDirectory(filepath.Dir(remoteCallBuddyPath))
@@ -207,45 +253,10 @@ func remoteRun(target, arch *string, args []string) {
 	err = bootstrapCallBuddy(syncingClient.sftpClient, localCallBuddyPath, remoteCallBuddyPath)
 	bootstrapped := err == nil
 
-	session, err := client.NewSession()
+	session, err := getPty(client)
 	if err != nil {
-		log.Fatal("Failed to create session: ", err)
+		log.Fatalf("Failed to get pty on %s@%s\n")
 	}
-	defer session.Close()
-
-	modes := ssh.TerminalModes{
-		ssh.ECHO:          1,     // disable echoing
-		ssh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
-		ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
-	}
-
-	// Request pseudo terminal
-	// FIXME DG: Make adjustments to current terminal propogate to remote pty
-	// (also handle signals)
-	width, height, err := terminal.GetSize(int(os.Stdin.Fd()))
-	if err != nil {
-		log.Fatal("Failed to get terminal size! ", err)
-	}
-	if err := session.RequestPty("xterm", height, width, modes); err != nil {
-		log.Fatal("request for pseudo terminal failed: ", err)
-	}
-	stdin, err := session.StdinPipe()
-	if err != nil {
-		log.Fatalf("Unable to setup stdin for session: %v", err)
-	}
-	go io.Copy(stdin, os.Stdin)
-
-	stdout, err := session.StdoutPipe()
-	if err != nil {
-		log.Fatalf("Unable to setup stdout for session: %v", err)
-	}
-	go io.Copy(os.Stdout, stdout)
-
-	stderr, err := session.StderrPipe()
-	if err != nil {
-		log.Fatalf("Unable to setup stderr for session: %v", err)
-	}
-	go io.Copy(os.Stderr, stderr)
 
 	session.Run(remoteCallBuddyPath + " " + strings.Join(args, " "))
 	// FIXME: When we do ctl-c to quit call-buddy we don't get here!
@@ -253,6 +264,7 @@ func remoteRun(target, arch *string, args []string) {
 	if bootstrapped {
 		cleanupBootstrapCallBuddy(syncingClient.sftpClient, remoteCallBuddyPath)
 	}
+	session.Close()
 	cleanupRemoteSyncing(syncingClient)
 }
 
