@@ -179,7 +179,7 @@ func remoteRun(target, arch *string, args []string) {
 	defer syncingClient.Close()
 
 	cwd, _ := os.Getwd()
-	localCallBuddyPath := cwd + "/build/" + *arch + "/call-buddy"
+	localCallBuddyPath := filepath.Clean(cwd + "/../telephono-ui/build/" + *arch + "/call-buddy")
 	fmt.Printf("Syncing call-buddy from %s to %s@%s\n", localCallBuddyPath, username, hostname)
 	remoteCallBuddyPath := bootstrapCallBuddy(localCallBuddyPath, remoteHomeDir, syncingClient)
 
@@ -229,7 +229,7 @@ func remoteRun(target, arch *string, args []string) {
 }
 
 func localRun(args []string) {
-	localCallBuddyPath := "../../call-buddy"
+	localCallBuddyPath := "../telephono-ui/call-buddy"
 	// We don't have a full argv here since we are missing arg 0: the executable name
 	argsWithArg0 := append([]string{filepath.Base(localCallBuddyPath)}, args...)
 	exe := &exec.Cmd{
