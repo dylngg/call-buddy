@@ -6,11 +6,23 @@ import (
 )
 
 type HeadersTemplate struct {
-	backing map[string]BasicExpandable
+	// TODO AH: UnExport this and use the marshal/unmarshal interface commented out below
+	Backing map[string]Expandable
 }
 
+type headersMarshallable map[string]string
+
+//func (headersTemplate HeadersTemplate) UnmarshalJSON(bytes []byte) error {
+//	marshallable := headersMarshallable{}
+//	json.Unmarshal(bytes, &marshallable)
+//}
+//
+//func (headersTemplate HeadersTemplate) MarshalJSON() ([]byte, error) {
+//	panic("implement me")
+//}
+
 func NewHeadersTemplate() HeadersTemplate {
-	return HeadersTemplate{map[string]BasicExpandable{}}
+	return HeadersTemplate{map[string]Expandable{}}
 }
 
 // TODO AH: Do we even care about wrapping?
@@ -42,11 +54,11 @@ Takes an expander and resolves the header VALUES only, meaning variables are una
 Returns it all as a standard http.Header Object
 */
 func (headersTemplate HeadersTemplate) ExpandAllAsHeader(expander Expander) (http.Header, []error) {
-	returnErrors := make([]error, 0, len(headersTemplate.backing))
+	returnErrors := make([]error, 0, len(headersTemplate.Backing))
 	toReturn := http.Header{}
 
 	// TODO AH: Error handling here
-	for k, v := range headersTemplate.backing {
+	for k, v := range headersTemplate.Backing {
 		if valueResolved, valueErr := v.Expand(expander); valueErr == nil {
 			// FIXME AH: Multiple headers?
 			toReturn.Set(k, valueResolved)
@@ -63,5 +75,5 @@ func (headersTemplate HeadersTemplate) ExpandAllAsHeader(expander Expander) (htt
 }
 
 func (headersTemplate *HeadersTemplate) Set(headername, expandableBody string) {
-	headersTemplate.backing[headername] = NewExpandable(expandableBody)
+	headersTemplate.Backing[headername] = NewExpandable(expandableBody)
 }

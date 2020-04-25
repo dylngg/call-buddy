@@ -8,19 +8,19 @@ import "errors"
 May be replaced with a better struct more suited to serialization
 */
 type SimpleContributor struct {
-	prefix  string
-	backing map[string]string
+	Prefix  string
+	Backing map[string]string
 }
 
 func (s SimpleContributor) Contribute() (string, interface{}, error) {
-	if len(s.prefix) == 0 {
+	if len(s.Prefix) == 0 {
 		return "", 0, errors.New("Must have a prefix")
 	}
-	return s.prefix, s.backing, nil
+	return s.Prefix, s.Backing, nil
 }
 
 func (s *SimpleContributor) Set(key, value string) {
-	s.backing[key] = value
+	s.Backing[key] = value
 }
 
 //NewSimpleContributor creates a new simple contribut at the `prefix` address, i.e. accessible at {{prefix.Value}}
@@ -31,7 +31,7 @@ func NewSimpleContributor(prefix string) SimpleContributor {
 	}
 
 	return SimpleContributor{
-		prefix:  prefix,
-		backing: map[string]string{},
+		Prefix:  prefix,
+		Backing: map[string]string{},
 	}
 }

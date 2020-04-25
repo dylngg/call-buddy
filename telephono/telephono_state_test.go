@@ -1,9 +1,62 @@
-package telephono
+package telephono_test
 
 import (
+	"encoding/json"
+	. "github.com/call-buddy/call-buddy/telephono"
+	. "github.com/onsi/gomega"
 	"strings"
 	"testing"
 )
+
+func TestSerializeState(t *testing.T) {
+	// Environment 1 setup
+	env1 := CallBuddyEnvironment{NewSimpleContributor("Var")}
+	env1.StoredVariables.Set("Environment", "Env1")
+
+	// Environment 2 setup
+	env2 := CallBuddyEnvironment{NewSimpleContributor("Var")}
+	env2.StoredVariables.Set("Environment", "Env2")
+
+	// Set up a collection
+	headers := NewHeadersTemplate()
+	headers.Set("BigBad", "Wolf")
+	coll1 := CallBuddyCollection{
+		RequestTemplates: []RequestTemplate{
+			{
+				Method:         Post,
+				Url:            NewExpandable("https://google.com/"),
+				Headers:        headers,
+				ExpandableBody: NewExpandable("{{Var.Environment}}"),
+			},
+		}}
+
+	state := CallBuddyState{
+		Collections:  []CallBuddyCollection{coll1},
+		Environments: []CallBuddyEnvironment{env1, env2},
+	}
+
+	var marshaledString string
+	t.Run("Marshal State", func(sub *testing.T) {
+		if marshaledBytes, marshalErr := json.MarshalIndent(state, "|", "  "); marshalErr == nil {
+			marshaledString = string(marshaledBytes)
+			sub.Log("Successfully marshaled the big fat state")
+		}
+	})
+
+	t.Run("Check Marshaled string", func(sub *testing.T) {
+		RegisterFailHandler(func(message string, callerSkip ...int) {
+			sub.Error(message)
+		})
+		if !(Expect(marshaledString).Should(ContainSubstring("google.com")) &&
+			Expect(marshaledString).Should(ContainSubstring("Env1")) &&
+			Expect(marshaledString).Should(ContainSubstring("Env2")) &&
+			Expect(marshaledString).Should(ContainSubstring("BigBad\"")) &&
+			Expect(marshaledString).Should(ContainSubstring("Wolf\"")) &&
+			Expect(marshaledString).Should(ContainSubstring("{{Var.Environment}}"))) {
+			sub.Fatal("Didn't pass all assertions")
+		}
+	})
+}
 
 func TestExpander_Expand(t *testing.T) {
 	under := Expander{}
