@@ -21,7 +21,7 @@ func (m HttpMethod) asMethodString() string {
 	return string(m)
 }
 
-type Expandable interface {
+type expandable interface {
 	//GetUnexpanded gives the string as it is now
 	GetUnexpanded() string
 	//SetUnexpanded will set the unexpanded string
@@ -43,7 +43,6 @@ type CallBuddyState struct {
 type CallBuddyCollection struct {
 	// TODO AH: Call templates
 	RequestTemplates []RequestTemplate
-	Environments     []CallBuddyEnvironment
 }
 
 type CallBuddyEnvironment struct {

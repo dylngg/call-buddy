@@ -35,26 +35,49 @@ func TestSerializeState(t *testing.T) {
 		Environments: []CallBuddyEnvironment{env1, env2},
 	}
 
+	var marshaledBytes []byte
 	var marshaledString string
-	t.Run("Marshal State", func(sub *testing.T) {
-		if marshaledBytes, marshalErr := json.MarshalIndent(state, "|", "  "); marshalErr == nil {
-			marshaledString = string(marshaledBytes)
-			sub.Log("Successfully marshaled the big fat state")
+	t.Run("Marshal State", func(t *testing.T) {
+		if tempMarshaledBytes, marshalErr := json.MarshalIndent(state, "", "\t"); marshalErr == nil {
+			marshaledBytes = tempMarshaledBytes
+			marshaledString = string(tempMarshaledBytes)
+			t.Log("Successfully marshaled the big fat state")
+			t.Log(marshaledString)
+		} else {
+			t.Fatal("Didn't marshal correctly!: " + marshalErr.Error())
 		}
 	})
 
-	t.Run("Check Marshaled string", func(sub *testing.T) {
+	t.Run("Check Marshaled string", func(t *testing.T) {
 		RegisterFailHandler(func(message string, callerSkip ...int) {
-			sub.Error(message)
+			t.Fatal(message)
 		})
-		if !(Expect(marshaledString).Should(ContainSubstring("google.com")) &&
-			Expect(marshaledString).Should(ContainSubstring("Env1")) &&
-			Expect(marshaledString).Should(ContainSubstring("Env2")) &&
-			Expect(marshaledString).Should(ContainSubstring("BigBad\"")) &&
-			Expect(marshaledString).Should(ContainSubstring("Wolf\"")) &&
-			Expect(marshaledString).Should(ContainSubstring("{{Var.Environment}}"))) {
-			sub.Fatal("Didn't pass all assertions")
-		}
+
+		Expect(marshaledString).Should(ContainSubstring("google.com"))
+		Expect(marshaledString).Should(ContainSubstring("Env1"))
+		Expect(marshaledString).Should(ContainSubstring("Env2"))
+		Expect(marshaledString).Should(ContainSubstring("BigBad\""))
+		Expect(marshaledString).Should(ContainSubstring("Wolf\""))
+		Expect(marshaledString).Should(ContainSubstring("{{Var.Environment}}"))
+	})
+
+	unmarshalled := CallBuddyState{}
+	t.Run("Deserialize string", func(t *testing.T) {
+		RegisterFailHandler(func(message string, callerSkip ...int) {
+			t.Fatal(message)
+		})
+		Expect(json.Unmarshal(marshaledBytes, &unmarshalled)).ShouldNot(HaveOccurred())
+	})
+
+	t.Run("Check Deserialized structure", func(t *testing.T) {
+		RegisterFailHandler(func(message string, callerSkip ...int) {
+			t.Fatal(message)
+		})
+
+		Expect(unmarshalled.Collections).Should(HaveLen(1))
+		Expect(unmarshalled.Environments).Should(HaveLen(2))
+		Expect(env1).Should(BeElementOf(unmarshalled.Environments))
+		Expect(env2).Should(BeElementOf(unmarshalled.Environments))
 	})
 }
 

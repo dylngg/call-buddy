@@ -11,9 +11,9 @@ type CallResponse *http.Response
 
 type RequestTemplate struct {
 	Method         HttpMethod
-	Url            Expandable
+	Url            *BasicExpandable
 	Headers        HeadersTemplate
-	ExpandableBody Expandable
+	ExpandableBody *BasicExpandable
 	// TODO AH: specify a body type that's just given a reader.
 }
 

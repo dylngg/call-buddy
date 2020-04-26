@@ -1,34 +1,32 @@
 package telephono
 
-import "strings"
-
 ////
 // Basic Expandable
 ////
 type BasicExpandable struct {
-	backing string
+	Backing string
 }
 
-func (basic *BasicExpandable) UnmarshalJSON(bytes []byte) error {
-	byteString := string(bytes)
-	basic.backing = strings.Trim(byteString, `"`)
-	return nil
-}
-
-func (basic *BasicExpandable) MarshalJSON() ([]byte, error) {
-	return []byte(`"` + basic.backing + `"`), nil
-}
+//func (basic *BasicExpandable) UnmarshalJSON(bytes []byte) error {
+//	byteString := string(bytes)
+//	basic.backing = strings.Trim(byteString, `"`)
+//	return nil
+//}
+//
+//func (basic *BasicExpandable) MarshalJSON() ([]byte, error) {
+//	return []byte(`"` + basic.backing + `"`), nil
+//}
 
 func (basic *BasicExpandable) Expand(expandable Expander) (string, error) {
 	return expandable.Expand(basic.GetUnexpanded())
 }
 
 func (basic *BasicExpandable) GetUnexpanded() string {
-	return basic.backing
+	return basic.Backing
 }
 
 func (basic *BasicExpandable) SetUnexpanded(toSet string) {
-	basic.backing = toSet
+	basic.Backing = toSet
 }
 
 func NewExpandable(unexpanded string) *BasicExpandable {

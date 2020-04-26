@@ -7,7 +7,7 @@ import (
 
 type HeadersTemplate struct {
 	// TODO AH: UnExport this and use the marshal/unmarshal interface commented out below
-	Backing map[string]Expandable
+	Backing map[string]*BasicExpandable
 }
 
 type headersMarshallable map[string]string
@@ -22,7 +22,7 @@ type headersMarshallable map[string]string
 //}
 
 func NewHeadersTemplate() HeadersTemplate {
-	return HeadersTemplate{map[string]Expandable{}}
+	return HeadersTemplate{map[string]*BasicExpandable{}}
 }
 
 // TODO AH: Do we even care about wrapping?
