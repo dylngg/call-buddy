@@ -10,6 +10,8 @@ import (
 	"strings"
 )
 
+var response_body_string string = ""
+
 func die(msg string) {
 	os.Stderr.WriteString(msg)
 	os.Exit(1)
@@ -23,10 +25,13 @@ func printResponse(resp *http.Response) {
 	if len(resp.Header) > 1 {
 		for key, value := range resp.Header {
 			fmt.Printf("%s: %s\n", key, strings.Trim(strings.Join(value, " "), "[]"))
+			response_body_string += fmt.Sprintf("%s: %s\n", key, strings.Trim(strings.Join(value, " "), "[]"))
 		}
 		os.Stdout.WriteString("\n")
+		response_body_string += "\n"
 	}
 	os.Stdout.WriteString(string(body))
+	response_body_string += string(body)
 }
 
 //Setting the manager
@@ -51,7 +56,7 @@ func layout(g *gocui.Gui) error {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
-		fmt.Fprintln(v, "> https://httpbin.org/get")
+		fmt.Fprintln(v, "> https://google.com")
 		fmt.Fprintln(v)
 		fmt.Fprintln(v, "[ ]"+"GET")
 		fmt.Fprintln(v, "[ ]"+"POST")
@@ -88,40 +93,18 @@ func quit(g *gocui.Gui, v *gocui.View) error {
 	return gocui.ErrQuit
 }
 
-//func update(g *gocui.Gui, v *gocui.View) error {
-//	v, err := g.View("viewname")
-//	if err != nil {
-//		// handle error
-//	}
-//	v.Clear()
-//	fmt.Fprintln(v, "THIS IS UPDATED - ALSO DEREK FUCKS")
-//	return nil
-//}
+//This function will update the response body (currently) by pressing a variable
+func update(g *gocui.Gui, v *gocui.View) error {
+
+	response_view, _ := g.View("response_body")
+	response_view.Clear()
+
+	fmt.Fprint(response_view, response_body_string)
+
+	return nil
+}
 
 func main() {
-
-	//Setting up a new TUI
-	g, err := gocui.NewGui(gocui.OutputNormal)
-	if err != nil {
-		log.Panicln(err)
-	}
-	defer g.Close()
-
-	//Setting a manager, sets the view (defined as another function above)
-	g.SetManagerFunc(layout)
-
-	//Setting keybindings
-	if err := g.SetKeybinding("", gocui.KeyCtrlZ, gocui.ModNone, quit); err != nil {
-		log.Panicln(err)
-	}
-
-	//if err := g.SetKeybinding("", gocui.KeyEnter, gocui.ModNone, update); err != nil {
-	//	log.Panicln(err)
-	//}
-
-	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
-		log.Panicln(err)
-	}
 
 	argLen := len(os.Args[1:])
 	if argLen < 2 {
@@ -140,7 +123,7 @@ func main() {
 			log.Fatal(err)
 		}
 		defer resp.Body.Close()
-		//printResponse(resp)
+		printResponse(resp)
 
 	case "post":
 		resp, err := http.Post(url, contentType, os.Stdin)
@@ -188,4 +171,28 @@ func main() {
 	default:
 		die("Invalid <call-type> given.\n")
 	}
+
+	//Setting up a new TUI
+	g, err := gocui.NewGui(gocui.OutputNormal)
+	if err != nil {
+		log.Panicln(err)
+	}
+	defer g.Close()
+
+	//Setting a manager, sets the view (defined as another function above)
+	g.SetManagerFunc(layout)
+
+	//Setting keybindings
+	if err := g.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, quit); err != nil {
+		log.Panicln(err)
+	}
+
+	if err := g.SetKeybinding("", gocui.KeyEnter, gocui.ModNone, update); err != nil {
+		log.Panicln(err)
+	}
+
+	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
+		log.Panicln(err)
+	}
+
 }
