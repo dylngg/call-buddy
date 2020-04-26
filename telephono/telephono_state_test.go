@@ -78,6 +78,7 @@ func TestSerializeState(t *testing.T) {
 		Expect(unmarshalled.Environments).Should(HaveLen(2))
 		Expect(env1).Should(BeElementOf(unmarshalled.Environments))
 		Expect(env2).Should(BeElementOf(unmarshalled.Environments))
+		Expect(coll1).Should(BeElementOf(unmarshalled.Collections))
 	})
 }
 
