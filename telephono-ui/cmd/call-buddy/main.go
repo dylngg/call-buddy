@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/jroimartin/gocui"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/jroimartin/gocui"
 )
 
 var response_body_string string = ""
@@ -24,13 +25,10 @@ func printResponse(resp *http.Response) {
 	}
 	if len(resp.Header) > 1 {
 		for key, value := range resp.Header {
-			fmt.Printf("%s: %s\n", key, strings.Trim(strings.Join(value, " "), "[]"))
 			response_body_string += fmt.Sprintf("%s: %s\n", key, strings.Trim(strings.Join(value, " "), "[]"))
 		}
-		os.Stdout.WriteString("\n")
 		response_body_string += "\n"
 	}
-	os.Stdout.WriteString(string(body))
 	response_body_string += string(body)
 }
 
