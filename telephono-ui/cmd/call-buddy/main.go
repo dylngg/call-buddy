@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -11,8 +13,25 @@ import (
 	"github.com/jroimartin/gocui"
 )
 
-var response_body_string string = ""
+var rspBodyStr string = ""
 
+// ViewState Which view is active
+type ViewState int
+
+const (
+	// CMD_LINE The command line view is active
+	CMD_LINE ViewState = iota
+	// MTD_BODY The method body view is active (GET, PUT, HEAD)
+	MTD_BODY
+	// RQT_HEAD The request header view is active
+	RQT_HEAD
+	// RQT_BODY The request body view is active
+	RQT_BODY
+	// RSP_BODY The response body view is active
+	RSP_BODY
+	// NO_STATE No state is selected
+	NO_STATE
+)
 const (
 	TTL_LINE_VIEW = "title_view"
 	// CMD_LINE_VIEW The command line view string
@@ -27,23 +46,209 @@ const (
 	RSP_BODY_VIEW = "response_body"
 )
 
+type ioHijacker struct {
+	backupFile *os.File
+	pipe       *os.File
+	channel    chan string
+}
+
+var currView ViewState = NO_STATE
+
 func die(msg string) {
 	os.Stderr.WriteString(msg)
 	os.Exit(1)
 }
 
-func printResponse(resp *http.Response) {
+// This function hijacks stderr and makes the errors go to a buffer (rather
+// the screen)
+func hijackStderr() *ioHijacker {
+	// Backup of the real stderr so we can restore it later
+	stderr := os.Stderr
+	rpipe, wpipe, _ := os.Pipe()
+	os.Stderr = wpipe
+	log.SetOutput(wpipe)
+
+	hijackChannel := make(chan string)
+	// Copy the stderr in a separate goroutine we don't block indefinitely
+	go func() {
+		var buf bytes.Buffer
+		io.Copy(&buf, rpipe)
+		hijackChannel <- buf.String()
+	}()
+
+	return &ioHijacker{
+		backupFile: stderr,
+		pipe:       wpipe,
+		channel:    hijackChannel,
+	}
+}
+
+// Returns a string of any errors that were supposed to go to stderr
+func unhijackStderr(hijacker *ioHijacker) string {
+	hijacker.pipe.Close()
+	// Restore the real stderr
+	os.Stderr = hijacker.backupFile
+	log.SetOutput(os.Stderr)
+	return <-hijacker.channel
+}
+
+func responseToString(resp *http.Response) string {
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatal(err)
+		return err.Error()
 	}
 	if len(resp.Header) > 1 {
 		for key, value := range resp.Header {
-			response_body_string += fmt.Sprintf("%s: %s\n", key, strings.Trim(strings.Join(value, " "), "[]"))
+			rspBodyStr += fmt.Sprintf("%s: %s\n", key, strings.Trim(strings.Join(value, " "), "[]"))
 		}
-		response_body_string += "\n"
+		rspBodyStr += "\n"
 	}
-	response_body_string += string(body)
+	rspBodyStr += string(body)
+	return rspBodyStr
+}
+
+func call(args []string) string {
+	var r string
+	// If we run into any issues here, rather than dying we can catch them with
+	// the hijacker and print them out to the tui!
+	hijack := hijackStderr()
+
+	argLen := len(args)
+	if argLen < 2 {
+		return "Usage: <call-type> <url> [content-type]"
+	}
+
+	callType := strings.ToLower(args[0])
+	url := args[1]
+	contentType := "text/plain"
+	if argLen > 2 {
+		contentType = args[2]
+	}
+	switch callType {
+	case "get":
+		resp, err := http.Get(url)
+		if err != nil {
+			log.Print(err)
+			break
+		}
+		defer resp.Body.Close()
+		r = responseToString(resp)
+
+	case "post":
+		resp, err := http.Post(url, contentType, os.Stdin)
+		if err != nil {
+			log.Print(err)
+			break
+		}
+		defer resp.Body.Close()
+		r = responseToString(resp)
+
+	case "head":
+		resp, err := http.Head(url)
+		if err != nil {
+			log.Print(err)
+			break
+		}
+		defer resp.Body.Close()
+		r = responseToString(resp)
+
+	case "delete":
+		req, err := http.NewRequest("DELETE", url, nil)
+		if err != nil {
+			log.Print(err)
+			break
+		}
+		req.Header.Add("Connection", "close")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Print(err)
+			break
+		}
+		defer resp.Body.Close()
+		r = responseToString(resp)
+
+	case "put":
+		req, err := http.NewRequest("PUT", url, os.Stdin)
+		if err != nil {
+			log.Print(err)
+		}
+		req.Header.Add("Connection", "close")
+		req.Header.Add("Content-type", contentType)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Print(err)
+			break
+		}
+		defer resp.Body.Close()
+		r = responseToString(resp)
+
+	default:
+		r = "Invalid <call-type> given.\n"
+	}
+	stderr := unhijackStderr(hijack)
+	if stderr != "" {
+		r = stderr
+	}
+
+	return r
+}
+
+func evalCmdLine(g *gocui.Gui) {
+	// FIXME: Deal with errors!
+	cmdLineView, _ := g.View(CMD_LINE_VIEW)
+	rspBodyView, _ := g.View(RSP_BODY_VIEW)
+	commandStr := cmdLineView.ViewBuffer()
+	commandStr = strings.TrimSpace(commandStr)
+	args := strings.Split(commandStr, " ")
+
+	if strings.HasPrefix(commandStr, ">") {
+		if len(args) < 2 {
+			return
+		}
+		outfile := args[1]
+		fd, _ := os.Create(outfile)
+		defer fd.Close()
+		fd.WriteString(rspBodyView.ViewBuffer())
+	} else {
+		rspBodyView.Clear()
+		responseStr := call(args)
+		fmt.Fprint(rspBodyView, responseStr)
+	}
+}
+
+func switchView(g *gocui.Gui, v *gocui.View) error {
+	// FIXME: Properly handle errors
+	switchViewAttrFunc := func(gui *gocui.Gui, next string) {
+		gui.SetCurrentView(next)
+		g.SetViewOnTop(next)
+		g.Cursor = true
+	}
+	// Round robben switching between views
+	switch currView {
+	case CMD_LINE:
+		// -> method body
+		currView = MTD_BODY
+		switchViewAttrFunc(g, MTD_BODY_VIEW)
+	case MTD_BODY:
+		// -> request headers
+		currView = RQT_HEAD
+		switchViewAttrFunc(g, RQT_HEAD_VIEW)
+	case RQT_HEAD:
+		// -> request body
+		currView = RQT_BODY
+		switchViewAttrFunc(g, RQT_BODY_VIEW)
+	case RQT_BODY:
+		// -> reqponse body
+		currView = RSP_BODY
+		switchViewAttrFunc(g, RSP_BODY_VIEW)
+	case RSP_BODY:
+		// -> command line
+		currView = CMD_LINE
+		switchViewAttrFunc(g, CMD_LINE_VIEW)
+	default:
+		log.Panicf("Got to a unknown view! %d\n", currView)
+	}
+	return nil
 }
 
 //Setting the manager
@@ -68,7 +273,10 @@ func layout(g *gocui.Gui) error {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
-		fmt.Fprint(v, "Response Body")
+		v.Title = "Response Body"
+		v.Wrap = true
+		v.Autoscroll = true
+		v.Editable = true
 	}
 
 	// Method Body (e.g. GET, PUT, HEAD...)
@@ -78,6 +286,7 @@ func layout(g *gocui.Gui) error {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
+		v.Title = "Method Body"
 		fmt.Fprintln(v, "> https://google.com")
 		fmt.Fprintln(v)
 		fmt.Fprintln(v, "[ ]"+"GET")
@@ -86,7 +295,6 @@ func layout(g *gocui.Gui) error {
 		fmt.Fprintln(v, "[ ]"+"PUT")
 		fmt.Fprintln(v, "[ ]"+"DELETE")
 		fmt.Fprintln(v, "[ ]"+"OPTIONS")
-
 	}
 
 	// Request Headers (e.g. Content-type: text/json)
@@ -96,7 +304,10 @@ func layout(g *gocui.Gui) error {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
-		fmt.Fprintln(v, "Request Headers")
+		v.Title = "Request Headers"
+		v.Wrap = true
+		v.Autoscroll = true
+		v.Editable = true
 	}
 
 	// Request Body (e.g. json: {})
@@ -105,8 +316,10 @@ func layout(g *gocui.Gui) error {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
-		fmt.Fprintln(v, "Request Body")
-
+		v.Title = "Request Body"
+		v.Wrap = true
+		v.Autoscroll = true
+		v.Editable = true
 	}
 
 	// Command Line (e.g. :get http://httpbin.org/get)
@@ -114,7 +327,9 @@ func layout(g *gocui.Gui) error {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
-		fmt.Fprintln(v, ":")
+		v.Wrap = false
+		v.Editable = true
+		v.Autoscroll = false
 	}
 	return nil
 }
@@ -125,83 +340,17 @@ func quit(g *gocui.Gui, v *gocui.View) error {
 }
 
 //This function will update the response body (currently) by pressing a variable
-func update(g *gocui.Gui, v *gocui.View) error {
-
-	response_view, _ := g.View(RSP_BODY_VIEW)
-	response_view.Clear()
-
-	fmt.Fprint(response_view, response_body_string)
-
+func onEnter(g *gocui.Gui, v *gocui.View) error {
+	// FIXME: Deal with other views
+	if currView == CMD_LINE {
+		evalCmdLine(g)
+	}
 	return nil
 }
 
 func main() {
-
-	argLen := len(os.Args[1:])
-	if argLen < 2 {
-		die("Usage: ./call-buddy <call-type> <url> [content-type]\n")
-	}
-	callType := strings.ToLower(os.Args[1])
-	url := os.Args[2]
-	contentType := "text/plain"
-	if argLen > 2 {
-		contentType = os.Args[3]
-	}
-	switch callType {
-	case "get":
-		resp, err := http.Get(url)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer resp.Body.Close()
-		printResponse(resp)
-
-	case "post":
-		resp, err := http.Post(url, contentType, os.Stdin)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer resp.Body.Close()
-		printResponse(resp)
-
-	case "head":
-		resp, err := http.Head(url)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer resp.Body.Close()
-		printResponse(resp)
-
-	case "delete":
-		req, err := http.NewRequest("DELETE", url, nil)
-		if err != nil {
-			log.Fatal(err)
-		}
-		req.Header.Add("Connection", "close")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer resp.Body.Close()
-		printResponse(resp)
-
-	case "put":
-		req, err := http.NewRequest("PUT", url, os.Stdin)
-		if err != nil {
-			log.Fatal(err)
-		}
-		req.Header.Add("Connection", "close")
-		req.Header.Add("Content-type", contentType)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer resp.Body.Close()
-		printResponse(resp)
-
-	default:
-		die("Invalid <call-type> given.\n")
-	}
+	// Switching to stderr since we do some black magic with catching that to
+	// prevent errors from hitting the tui (see hijackStderr)
 
 	//Setting up a new TUI
 	g, err := gocui.NewGui(gocui.OutputNormal)
@@ -209,6 +358,10 @@ func main() {
 		log.Panicln(err)
 	}
 	defer g.Close()
+
+	g.Highlight = true
+	g.Cursor = true
+	g.SelFgColor = gocui.ColorGreen
 
 	//Setting a manager, sets the view (defined as another function above)
 	g.SetManagerFunc(layout)
@@ -218,9 +371,16 @@ func main() {
 		log.Panicln(err)
 	}
 
-	if err := g.SetKeybinding("", gocui.KeyEnter, gocui.ModNone, update); err != nil {
+	if err := g.SetKeybinding("", gocui.KeyEnter, gocui.ModNone, onEnter); err != nil {
 		log.Panicln(err)
 	}
+
+	if err := g.SetKeybinding("", gocui.KeyTab, gocui.ModNone, switchView); err != nil {
+		log.Panicln(err)
+	}
+
+	currView = CMD_LINE
+	g.SetCurrentView(CMD_LINE_VIEW)
 
 	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
 		log.Panicln(err)
