@@ -1,6 +1,7 @@
-package telephono
+package telephono_test
 
 import (
+	. "github.com/call-buddy/call-buddy/telephono"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -8,6 +9,7 @@ import (
 )
 
 func TestBasicCallTemplate(t *testing.T) {
+	setUpServer()
 	template := NewHeadersTemplate()
 	template.Set("User", "{{Var.A}}")
 
@@ -15,7 +17,8 @@ func TestBasicCallTemplate(t *testing.T) {
 	expander := Expander{}
 	expander.AddContributor(EnvironmentContributor{})
 	contributor := NewSimpleContributor("Var")
-	contributor.Set("host", "https://httpbin.org")
+	//contributor.Set("host", "https://httpbin.org")
+	contributor.Set("host", GlobalTestState.getPrefix())
 	contributor.Set("A", "AAAA")
 	contributor.Set("B", "BBBB")
 	contributor.Set("Status", "329")
@@ -23,16 +26,16 @@ func TestBasicCallTemplate(t *testing.T) {
 
 	// Execute call
 	templateUnderTest := RequestTemplate{
-		method:  Post,
-		url:     NewExpandable("{{Var.host}}/post"),
-		headers: template,
-		expandableBody: NewExpandable(
+		Method:  Post,
+		Url:     NewExpandable("{{Var.host}}/postbalogna"),
+		Headers: template,
+		ExpandableBody: NewExpandable(
 			`{
 	"path": "{{Var.B}}"
 }`),
 	}
 
-	response, requestErr := templateUnderTest.executeWithClientAndExpander(http.DefaultClient, expander)
+	response, requestErr := templateUnderTest.ExecuteWithClientAndExpander(http.DefaultClient, expander)
 
 	if requestErr != nil {
 		t.Fatal("Got an error!\n", requestErr.Error())
@@ -46,8 +49,9 @@ func TestBasicCallTemplate(t *testing.T) {
 
 	if allBytes, readErr := ioutil.ReadAll(response.Body); readErr == nil {
 		asString := string(allBytes)
-		//t.Log(asString)
-		if !(strings.Contains(asString, "BBBB") && strings.Contains(asString, "AAAA")) {
+		t.Log("Received body below")
+		t.Log(prefixAllLinesOfString(asString, '|'))
+		if !(strings.Contains(asString, "BBBB") && strings.Contains(asString, "AAAA") && strings.Contains(asString, "postbalogna")) {
 			t.Fatal("Didn't find AAAA and BBBB")
 		}
 	} else {
