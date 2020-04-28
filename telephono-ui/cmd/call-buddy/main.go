@@ -2,15 +2,30 @@ package main
 
 import (
 	"fmt"
-	"github.com/jroimartin/gocui"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/jroimartin/gocui"
 )
 
 var response_body_string string = ""
+
+const (
+	TTL_LINE_VIEW = "title_view"
+	// CMD_LINE_VIEW The command line view string
+	CMD_LINE_VIEW = "command"
+	// MTD_BODY_VIEW The method body view string
+	MTD_BODY_VIEW = "method_body"
+	// RQT_HEAD_VIEW The request header view string
+	RQT_HEAD_VIEW = "request_head"
+	// RQT_BODY_VIEW The request body view string
+	RQT_BODY_VIEW = "request_body"
+	// RSP_BODY_VIEW The response body view string
+	RSP_BODY_VIEW = "response_body"
+)
 
 func die(msg string) {
 	os.Stderr.WriteString(msg)
@@ -24,35 +39,42 @@ func printResponse(resp *http.Response) {
 	}
 	if len(resp.Header) > 1 {
 		for key, value := range resp.Header {
-			fmt.Printf("%s: %s\n", key, strings.Trim(strings.Join(value, " "), "[]"))
 			response_body_string += fmt.Sprintf("%s: %s\n", key, strings.Trim(strings.Join(value, " "), "[]"))
 		}
-		os.Stdout.WriteString("\n")
 		response_body_string += "\n"
 	}
-	os.Stdout.WriteString(string(body))
 	response_body_string += string(body)
 }
 
 //Setting the manager
 func layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
-	if v, err := g.SetView("title_view", 0, 0, 27, 2); err != nil {
+	realMaxX, realMaxY := maxX-1, maxY-1
+	verticalSplitX := 27         // Defines the vertical split down to the command line
+	horizontalSplitY := maxY - 4 // Defines the horizontal command line split
+
+	// Call-Buddy Title
+	titleYStart := 0
+	titleYEnd := titleYStart + 2
+	if v, err := g.SetView(TTL_LINE_VIEW, 0, titleYStart, verticalSplitX, titleYEnd); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
 		fmt.Fprint(v, "\u001b[32mTerminal "+"\u001b[29mCall "+"\u001b[29mBuddy")
 	}
 
-	if v, err := g.SetView("response_body", 28, 0, maxX-1, maxY-4); err != nil {
+	// Response Body (e.g. html)
+	if v, err := g.SetView(RSP_BODY_VIEW, verticalSplitX+1, titleYStart, realMaxX, horizontalSplitY); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
 		fmt.Fprint(v, "Response Body")
 	}
 
-	//View that houses which operation we are choosing anf the host
-	if v, err := g.SetView("method_body", 0, 3, 27, 13); err != nil {
+	// Method Body (e.g. GET, PUT, HEAD...)
+	methodBodyYStart := titleYEnd + 1
+	methodBodyYEnd := methodBodyYStart + 10
+	if v, err := g.SetView(MTD_BODY_VIEW, 0, methodBodyYStart, verticalSplitX, methodBodyYEnd); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
@@ -67,17 +89,19 @@ func layout(g *gocui.Gui) error {
 
 	}
 
-	//view for request headers
-	if v, err := g.SetView("request_head", 0, 14, 27, 19); err != nil {
+	// Request Headers (e.g. Content-type: text/json)
+	requestHeadersYStart := methodBodyYEnd + 1
+	requestHeadersYEnd := requestHeadersYStart + 6
+	if v, err := g.SetView(RQT_HEAD_VIEW, 0, requestHeadersYStart, verticalSplitX, requestHeadersYEnd); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
 		fmt.Fprintln(v, "Request Headers")
-
 	}
 
-	//view for request body
-	if v, err := g.SetView("request_body", 0, 20, 27, maxY-4); err != nil {
+	// Request Body (e.g. json: {})
+	requestBodyYStart := requestHeadersYEnd + 1
+	if v, err := g.SetView(RQT_BODY_VIEW, 0, requestBodyYStart, verticalSplitX, horizontalSplitY); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
@@ -85,6 +109,13 @@ func layout(g *gocui.Gui) error {
 
 	}
 
+	// Command Line (e.g. :get http://httpbin.org/get)
+	if v, err := g.SetView(CMD_LINE_VIEW, 0, horizontalSplitY+1, realMaxX, realMaxY); err != nil {
+		if err != gocui.ErrUnknownView {
+			return err
+		}
+		fmt.Fprintln(v, ":")
+	}
 	return nil
 }
 
@@ -96,7 +127,7 @@ func quit(g *gocui.Gui, v *gocui.View) error {
 //This function will update the response body (currently) by pressing a variable
 func update(g *gocui.Gui, v *gocui.View) error {
 
-	response_view, _ := g.View("response_body")
+	response_view, _ := g.View(RSP_BODY_VIEW)
 	response_view.Clear()
 
 	fmt.Fprint(response_view, response_body_string)
@@ -194,5 +225,4 @@ func main() {
 	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
 		log.Panicln(err)
 	}
-
 }
