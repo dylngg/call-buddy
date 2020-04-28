@@ -13,6 +13,23 @@ import (
 
 var response_body_string string = ""
 
+// ViewState Which view is active
+type ViewState int
+
+const (
+	// CMD_LINE The command line view is active
+	CMD_LINE ViewState = iota
+	// MTD_BODY The method body view is active (GET, PUT, HEAD)
+	MTD_BODY
+	// RQT_HEAD The request header view is active
+	RQT_HEAD
+	// RQT_BODY The request body view is active
+	RQT_BODY
+	// RSP_BODY The response body view is active
+	RSP_BODY
+	// NO_STATE No state is selected
+	NO_STATE
+)
 const (
 	TTL_LINE_VIEW = "title_view"
 	// CMD_LINE_VIEW The command line view string
@@ -26,6 +43,8 @@ const (
 	// RSP_BODY_VIEW The response body view string
 	RSP_BODY_VIEW = "response_body"
 )
+
+var currView ViewState = NO_STATE
 
 func die(msg string) {
 	os.Stderr.WriteString(msg)
@@ -44,6 +63,41 @@ func printResponse(resp *http.Response) {
 		response_body_string += "\n"
 	}
 	response_body_string += string(body)
+}
+
+func switchView(g *gocui.Gui, v *gocui.View) error {
+	// FIXME: Properly handle errors
+	switchViewAttrFunc := func(gui *gocui.Gui, next string) {
+		gui.SetCurrentView(next)
+		g.SetViewOnTop(next)
+		g.Cursor = true
+	}
+	// Round robben switching between views
+	switch currView {
+	case CMD_LINE:
+		// -> method body
+		currView = MTD_BODY
+		switchViewAttrFunc(g, MTD_BODY_VIEW)
+	case MTD_BODY:
+		// -> request headers
+		currView = RQT_HEAD
+		switchViewAttrFunc(g, RQT_HEAD_VIEW)
+	case RQT_HEAD:
+		// -> request body
+		currView = RQT_BODY
+		switchViewAttrFunc(g, RQT_BODY_VIEW)
+	case RQT_BODY:
+		// -> reqponse body
+		currView = RSP_BODY
+		switchViewAttrFunc(g, RSP_BODY_VIEW)
+	case RSP_BODY:
+		// -> command line
+		currView = CMD_LINE
+		switchViewAttrFunc(g, CMD_LINE_VIEW)
+	default:
+		log.Panicf("Got to a unknown view! %d\n", currView)
+	}
+	return nil
 }
 
 //Setting the manager
@@ -68,7 +122,10 @@ func layout(g *gocui.Gui) error {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
-		fmt.Fprint(v, "Response Body")
+		v.Title = "Response Body"
+		v.Wrap = true
+		v.Autoscroll = true
+		v.Editable = true
 	}
 
 	// Method Body (e.g. GET, PUT, HEAD...)
@@ -78,6 +135,7 @@ func layout(g *gocui.Gui) error {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
+		v.Title = "Method Body"
 		fmt.Fprintln(v, "> https://google.com")
 		fmt.Fprintln(v)
 		fmt.Fprintln(v, "[ ]"+"GET")
@@ -86,7 +144,6 @@ func layout(g *gocui.Gui) error {
 		fmt.Fprintln(v, "[ ]"+"PUT")
 		fmt.Fprintln(v, "[ ]"+"DELETE")
 		fmt.Fprintln(v, "[ ]"+"OPTIONS")
-
 	}
 
 	// Request Headers (e.g. Content-type: text/json)
@@ -96,7 +153,10 @@ func layout(g *gocui.Gui) error {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
-		fmt.Fprintln(v, "Request Headers")
+		v.Title = "Request Headers"
+		v.Wrap = true
+		v.Autoscroll = true
+		v.Editable = true
 	}
 
 	// Request Body (e.g. json: {})
@@ -105,8 +165,10 @@ func layout(g *gocui.Gui) error {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
-		fmt.Fprintln(v, "Request Body")
-
+		v.Title = "Request Body"
+		v.Wrap = true
+		v.Autoscroll = true
+		v.Editable = true
 	}
 
 	// Command Line (e.g. :get http://httpbin.org/get)
@@ -114,6 +176,9 @@ func layout(g *gocui.Gui) error {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
+		v.Wrap = false
+		v.Editable = true
+		v.Autoscroll = false
 		fmt.Fprintln(v, ":")
 	}
 	return nil
@@ -136,7 +201,6 @@ func update(g *gocui.Gui, v *gocui.View) error {
 }
 
 func main() {
-
 	argLen := len(os.Args[1:])
 	if argLen < 2 {
 		die("Usage: ./call-buddy <call-type> <url> [content-type]\n")
@@ -210,6 +274,10 @@ func main() {
 	}
 	defer g.Close()
 
+	g.Highlight = true
+	g.Cursor = true
+	g.SelFgColor = gocui.ColorGreen
+
 	//Setting a manager, sets the view (defined as another function above)
 	g.SetManagerFunc(layout)
 
@@ -221,6 +289,13 @@ func main() {
 	if err := g.SetKeybinding("", gocui.KeyEnter, gocui.ModNone, update); err != nil {
 		log.Panicln(err)
 	}
+
+	if err := g.SetKeybinding("", gocui.KeyTab, gocui.ModNone, switchView); err != nil {
+		log.Panicln(err)
+	}
+
+	currView = CMD_LINE
+	g.SetCurrentView(CMD_LINE_VIEW)
 
 	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
 		log.Panicln(err)
